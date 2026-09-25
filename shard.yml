@@ -1,0 +1,22 @@
+name: whatsapp-crystal
+version: 0.1.0
+
+
+description: |
+  Pure-Crystal WhatsApp Web client: QR device linking plus end-to-end
+  encrypted text, photo and file sends to groups over the multi-device
+  protocol (Noise handshake, binary wire codec, X3DH/ratchet, sender keys).
+authors:
+  - Mansurov Maksatbek <maksat.mansurov@gmail.com>
+
+targets:
+  whatsapp-crystal:
+    main: src/cli.cr
+
+crystal: '>= 1.19.1'
+dependencies:
+  sqlite3:
+    github: crystal-lang/crystal-sqlite3
+    version: ">= 0.22.0"
+
+license: MIT

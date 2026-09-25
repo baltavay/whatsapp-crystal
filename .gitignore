@@ -1,0 +1,7 @@
+/bin/
+/lib/
+.env
+whatsapp-session.db
+whatsapp-session.db-shm
+whatsapp-session.db-wal
+whatsapp-qr.png
