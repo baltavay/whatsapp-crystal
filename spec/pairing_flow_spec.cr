@@ -322,6 +322,20 @@ describe WhatsApp::Native::Client do
       removal = request.child("remove-companion-device").not_nil!
       removal.attrs["jid"].should eq("15551234567:3@s.whatsapp.net")
       removal.attrs["reason"].should eq("user_initiated")
+
+      # Logout wipes the store (whatsmeow Store.Delete): the identity must not
+      # survive as a phantom linked session in the database.
+      WhatsApp::Store::DeviceStore.new(path).load_or_create.jid.should be_nil
+    end
+  end
+
+  it "refuses login when no device is linked" do
+    with_database do |path|
+      connection = StubConnection.new
+      client = WhatsApp::Native::Client.new(path, connection)
+      result = client.login
+      (result.error.not_nil!.message || "").should contain("not linked")
+      connection.sent.empty?.should be_true
     end
   end
 

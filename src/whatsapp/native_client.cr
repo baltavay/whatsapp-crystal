@@ -343,6 +343,10 @@ module WhatsApp
       # be dropped (it allows a single companion connection); retry once after a
       # short pause instead of failing the whole command.
       def login(timeout : Time::Span = CONNECT_TIMEOUT) : ConnectResult
+        # whatsmeow ErrNotLoggedIn: without a paired device the login sequence
+        # can only produce a confusing server stream error.
+        state = @device || @store.load_or_create
+        return ConnectResult.new(nil, error(:not_logged_in, "this device is not linked; run pair first")) unless state.jid
         result = perform_login(timeout)
         return result unless transport_failure?(result)
         sleep 3.seconds
@@ -446,6 +450,10 @@ module WhatsApp
           return ConnectResult.new(nil, error(:logout, "the server refused the logout: #{describe(response)}"))
         end
         close
+        # Parity with whatsmeow Logout: the store is deleted, so a later run
+        # starts from a clean, unlinked state instead of a 401 device_removed.
+        @store.clear!
+        @device = nil
         ConnectResult.new(state, nil)
       rescue ex : Exception
         ConnectResult.new(nil, wrap_error(:logout, ex))

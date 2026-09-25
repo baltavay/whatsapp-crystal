@@ -32,6 +32,11 @@ module WhatsApp
         device.save(@session)
       end
 
+      # Erases the persisted identity and every derived secret.
+      def clear! : Nil
+        @session.clear!
+      end
+
       def close : Nil
         @session.close if @owns_session
       end

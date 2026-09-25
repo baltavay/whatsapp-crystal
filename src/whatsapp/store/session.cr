@@ -79,6 +79,14 @@ module WhatsApp
         )
       end
 
+      # Drops every stored secret. whatsmeow deletes its store after a
+      # successful logout: the keys can no longer authenticate and must not
+      # look like a usable session on the next run.
+      def clear! : Nil
+        tables = @db.query_all("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'whatsapp_%'", as: String)
+        tables.each { |table| @db.exec("DELETE FROM #{table}") }
+      end
+
       def close : Nil
         @db.close
       end
