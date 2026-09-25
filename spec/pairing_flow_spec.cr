@@ -385,6 +385,10 @@ describe WhatsApp::Native::Client do
       connection = StubConnection.new
       client = WhatsApp::Native::Client.new(path, connection)
       client.connect
+      device = client.device.not_nil!
+      primary = WhatsApp::Crypto::Curve25519KeyPair.generate
+      connection.queue << pair_success_node(device, primary, "15551234567:3@s.whatsapp.net", "99999:3@lid")
+      client.await_pair_success(5.seconds).paired?.should be_true
       connection.queue << WhatsApp::Binary::Node.new("failure", {"reason" => "401", "message" => "bad"})
 
       result = client.login(5.seconds)
