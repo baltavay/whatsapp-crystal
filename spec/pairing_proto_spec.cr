@@ -63,6 +63,22 @@ describe WhatsApp::Proto::Pairing do
     decoded.encode.should eq(encoded)
   end
 
+  it "puts the caller's device name in the pairing payload" do
+    device = WhatsApp::DeviceState.new(
+      noise_key: WhatsApp::Crypto::Curve25519KeyPair.generate,
+      identity_key: WhatsApp::Crypto::Curve25519KeyPair.generate,
+      adv_secret: Random::Secure.random_bytes(32),
+    )
+    payload = WhatsApp::Proto::Registration.registration_payload(device, "Support Bot")
+
+    # ClientPayload.pairing_data (19) -> DevicePairingRegistrationData.device_props (8)
+    # -> DeviceProps.os (1): the label the phone lists under Linked devices.
+    pairing = protobuf_bytes_field(payload, 19).not_nil!
+    props_bytes = protobuf_bytes_field(pairing, 8).not_nil!
+    props = protobuf_bytes_field(props_bytes, 1).not_nil!
+    String.new(props).should eq("Support Bot")
+  end
+
   it "round trips ADV signed device identity and its HMAC wrapper" do
     identity = WhatsApp::Proto::ADV::DeviceIdentity.new(123_u64, 456_u64, 7_u32, 1_u32, 0_u32)
     identity_decoded = WhatsApp::Proto::ADV::DeviceIdentity.decode(identity.encode)

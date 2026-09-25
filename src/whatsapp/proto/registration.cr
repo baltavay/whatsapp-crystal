@@ -20,11 +20,15 @@ module WhatsApp
       CONNECT_TYPE_WIFI_UNKNOWN     =  1_u64
       CONNECT_REASON_USER_ACTIVATED =  1_u64
 
+      # Label the phone shows for this companion under Linked devices. whatsmeow
+      # uses Os: "whatsmeow" in store.DeviceProps; it is only sent at pairing.
+      DEFAULT_DEVICE_NAME = "whatsapp-crystal"
+
       def self.version_hash : Bytes
         Digest::MD5.digest(WA_VERSION)
       end
 
-      def self.registration_payload(device : DeviceState) : Bytes
+      def self.registration_payload(device : DeviceState, device_name : String = DEFAULT_DEVICE_NAME) : Bytes
         payload = base
         payload.passive = false
         payload.pull = false
@@ -38,7 +42,7 @@ module WhatsApp
         registration.signed_key = device.signed_prekey.public_key
         registration.signed_key_signature = device.signed_prekey.signature
         registration.build_hash = version_hash
-        registration.device_props = Companion::DeviceProps.web.encode
+        registration.device_props = Companion::DeviceProps.web(device_name).encode
         payload.pairing_data = registration
         payload.encode
       end

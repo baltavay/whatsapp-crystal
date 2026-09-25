@@ -8,7 +8,7 @@ action = ARGV.shift?
 if action.nil? || {"help", "--help", "-h"}.includes?(action)
   puts <<-USAGE
   Usage:
-    whatsapp-crystal pair [--db PATH] [--ws-url URL]
+    whatsapp-crystal pair [--name NAME] [--db PATH] [--ws-url URL]
     whatsapp-crystal groups [--db PATH] [--ws-url URL]
     whatsapp-crystal logout [--db PATH] [--ws-url URL]
     whatsapp-crystal send TEXT [--group JID] [--db PATH] [--ws-url URL]
@@ -21,6 +21,7 @@ if action.nil? || {"help", "--help", "-h"}.includes?(action)
     WHATSAPP_WS_URL        WhatsApp WebSocket URL (default: web.whatsapp.com)
     WHATSAPP_MEDIA_HOST    optional media host override (auto-discovered when unset)
     WHATSAPP_MEDIA_AUTH    optional media token override (required with WHATSAPP_MEDIA_HOST)
+    WHATSAPP_DEVICE_NAME   linked-device label (default: whatsapp-crystal, pairing only)
   USAGE
   exit(action.nil? ? 1 : 0)
 end
@@ -30,6 +31,7 @@ db = config.session_db
 ws_url = config.websocket_url
 media_host = config.media_host
 media_auth = config.media_auth
+device_name = config.device_name
 qr_path = nil.as(String?)
 
 parser = OptionParser.new do |opts|
@@ -38,14 +40,13 @@ parser = OptionParser.new do |opts|
   opts.on("--ws-url URL", "WhatsApp WebSocket URL") { |value| ws_url = value }
   opts.on("--media-host HOST", "WhatsApp media host") { |value| media_host = value }
   opts.on("--media-auth TOKEN", "WhatsApp media token") { |value| media_auth = value }
-  opts.on("--qr PATH", "write the pairing QR as a PNG file") { |value| qr_path = value }
+  opts.on("--name NAME", "linked-device label, used when pairing (default: #{WhatsApp::Proto::Registration::DEFAULT_DEVICE_NAME})") { |value| device_name = value }
   opts.on("--help", "show this help") { puts opts; exit }
 end
 
 begin
   parser.parse(ARGV)
-  client = WhatsApp::Client.new(WhatsApp::Config.new(group, db, ws_url, media_host, media_auth))
-
+  client = WhatsApp::Client.new(WhatsApp::Config.new(group, db, ws_url, media_host, media_auth, device_name))
   case action
   when "pair"
     puts "Scan this from WhatsApp -> Linked devices; waiting for the scan..."

@@ -229,6 +229,7 @@ module WhatsApp
         @media : MediaTransport? = nil,
         @group_crypto : GroupCrypto? = nil,
         @pairwise : PairwiseCrypto? = nil,
+        @device_name : String = Proto::Registration::DEFAULT_DEVICE_NAME,
       )
         @device = nil.as(DeviceState?)
         @connected = false
@@ -247,8 +248,9 @@ module WhatsApp
         media : MediaTransport? = nil,
         group_crypto : GroupCrypto? = nil,
         pairwise : PairwiseCrypto? = nil,
+        device_name : String = Proto::Registration::DEFAULT_DEVICE_NAME,
       )
-        initialize(Store::DeviceStore.new(path), connection, media, group_crypto, pairwise)
+        initialize(Store::DeviceStore.new(path), connection, media, group_crypto, pairwise, device_name)
       end
 
       def connected? : Bool
@@ -263,7 +265,7 @@ module WhatsApp
       # with the registration payload (unpaired) or login payload (paired).
       def connect : ConnectResult
         state = @store.load_or_create
-        payload = state.paired? ? Proto::Registration.login_payload(state) : Proto::Registration.registration_payload(state)
+        payload = state.paired? ? Proto::Registration.login_payload(state) : Proto::Registration.registration_payload(state, @device_name)
         @connection.connect(state, payload)
         @device = state
         @connected = true

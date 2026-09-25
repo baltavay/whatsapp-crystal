@@ -41,10 +41,12 @@ Requires Crystal >= 1.19.1 and libsqlite3 (the session store).
 ```crystal
 require "whatsapp-crystal"
 
-config = WhatsApp::Config.new(session_db: "./whatsapp-session.db")
+config = WhatsApp::Config.new(session_db: "./whatsapp-session.db", device_name: "My Bot")
 client = WhatsApp::Client.new(config)
 
 # Link a companion device: pair_and_login blocks until the QR is scanned.
+# device_name is the label the phone shows under Linked devices — it can
+# only be set at pairing time.
 jid = client.pair_and_login do |qr|
   # Render the QR payload yourself, e.g. with `qrencode -o qr.png #{qr}`
   puts "Scan this: #{qr}"
@@ -77,6 +79,7 @@ Every send returns the WhatsApp message id (a `String`). Failures raise
 | `websocket_url` | `WHATSAPP_WS_URL`    | `wss://web.whatsapp.com/ws/chat` |
 | `media_host`    | `WHATSAPP_MEDIA_HOST`| auto-discovered          |
 | `media_auth`    | `WHATSAPP_MEDIA_AUTH`| auto-discovered          |
+| `device_name`   | `WHATSAPP_DEVICE_NAME`| `whatsapp-crystal` (pairing only) |
 
 The session database holds the identity keys, the Signal sessions and the
 sender keys — treat it as a secret; deleting it loses the linking.
@@ -87,7 +90,7 @@ The shard also ships a CLI (`src/cli.cr`):
 
 ```sh
 shards build whatsapp-crystal
-bin/whatsapp-crystal pair                       # link (QR to ./whatsapp-qr.png)
+bin/whatsapp-crystal pair --name "My Bot"         # link (QR to ./whatsapp-qr.png)
 bin/whatsapp-crystal groups
 bin/whatsapp-crystal send "hello" --group 120363012345678901@g.us
 bin/whatsapp-crystal send-photo cat.jpg "caption" --group 120363012345678901@g.us
