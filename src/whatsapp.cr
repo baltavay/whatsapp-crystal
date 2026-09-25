@@ -148,6 +148,20 @@ module WhatsApp
       raise_native!(result.error)
     end
 
+    # Whether the companion is connected and logged in. The flags reflect the
+    # state machine, not socket liveness: a dropped socket still reports true
+    # until a request fails (see ping?).
+    def logged_in? : Bool
+      @native.logged_in?
+    end
+
+    # Keepalive ping over the live connection (whatsmeow keepalive). Callers
+    # should ping while idle and reconnect when this returns false: WhatsApp
+    # drops sockets after about a minute of client silence.
+    def ping? : Bool
+      @native.ping
+    end
+
     def close : Nil
       @native.close
     end

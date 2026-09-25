@@ -419,6 +419,23 @@ module WhatsApp
         groups
       end
 
+      # Client-side keepalive (whatsmeow keepalive.go): the companion must
+      # ping the server while idle. A socket that is only read when a caller
+      # waits for a reply goes silent for the server, is dropped after about
+      # a minute, and the phone-side linking then never completes. The ping
+      # round trip also answers queued server pings and acks inbound
+      # messages (FilteredConnection). False means "reconnect".
+      def ping : Bool
+        return false unless @connected && @logged_in
+        request = Binary::Node.new("iq", attrs(type: "get", xmlns: "urn:xmpp:ping", to: "s.whatsapp.net", id: message_id), nil, [
+          Binary::Node.new("ping"),
+        ])
+        response = @connection.request(request)
+        !response.nil? && response.tag == "iq" && response.attribute("type") == "result"
+      rescue ex : Exception
+        false
+      end
+
       def send_text(group_jid : String, text : String) : SendResult
         return failure(:send_text, "text must not be empty") if text.empty?
         send_message(group_jid, "text", text_message(text))

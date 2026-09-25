@@ -329,6 +329,42 @@ describe WhatsApp::Native::Client do
     end
   end
 
+  it "pings the server as keepalive and reports the round trip" do
+    with_database do |path|
+      previous = ENV["WHATSAPP_REQUEST_TIMEOUT"]?
+      ENV["WHATSAPP_REQUEST_TIMEOUT"] = "1"
+      begin
+        connection = StubConnection.new
+        client = WhatsApp::Native::Client.new(path, connection)
+        client.connect
+        device = client.device.not_nil!
+        primary = WhatsApp::Crypto::Curve25519KeyPair.generate
+        connection.queue << pair_success_node(device, primary, "15551234567:3@s.whatsapp.net", "99999:3@lid")
+        client.await_pair_success(5.seconds).paired?.should be_true
+        connection.queue << WhatsApp::Binary::Node.new("success", {"lid" => "99999:3@lid"})
+        connection.result_for("count")
+        connection.result_for("prekeys")
+        connection.result_for("passive")
+        client.login(5.seconds).success?.should be_true
+        connection.sent.clear
+
+        # A socket that never answers is a dead socket, not a hang.
+        client.ping.should be_false
+        ping = connection.sent.reverse.find { |node| node.attribute("xmlns") == "urn:xmpp:ping" }.not_nil!
+        ping.attribute("type").should eq("get")
+        ping.attribute("to").should eq("s.whatsapp.net")
+        ping.child("ping").not_nil!
+        # A result IQ answers the round trip. The reply carries no id: an
+        # id-less response matches whichever request is waiting.
+        connection.queue << WhatsApp::Binary::Node.new("iq", {"type" => "result"})
+        client.ping.should be_true
+      ensure
+        ENV.delete("WHATSAPP_REQUEST_TIMEOUT")
+        ENV["WHATSAPP_REQUEST_TIMEOUT"] = previous if previous
+      end
+    end
+  end
+
   it "refuses login when no device is linked" do
     with_database do |path|
       connection = StubConnection.new
