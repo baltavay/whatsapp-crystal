@@ -363,10 +363,10 @@ describe WhatsApp::Native::Client do
 
         # A socket that never answers is a dead socket, not a hang.
         client.ping.should be_false
-        ping = connection.sent.reverse.find { |node| node.attribute("xmlns") == "urn:xmpp:ping" }.not_nil!
+        # The keepalive is the official clients' w:p query.
+        ping = connection.sent.reverse.find { |node| node.attribute("xmlns") == "w:p" }.not_nil!
         ping.attribute("type").should eq("get")
         ping.attribute("to").should eq("s.whatsapp.net")
-        ping.child("ping").not_nil!
         # A result IQ answers the round trip. The reply carries no id: an
         # id-less response matches whichever request is waiting.
         connection.queue << WhatsApp::Binary::Node.new("iq", {"type" => "result"})
@@ -548,6 +548,81 @@ describe WhatsApp::Native::Client do
       login_fields.should contain(1)  # username
       login_fields.should contain(18) # device id
       login_fields.should_not contain(19)
+    end
+  end
+
+  it "acknowledges notifications with an ack class=notification" do
+    with_database do |path|
+      connection = StubConnection.new
+      client = WhatsApp::Native::Client.new(path, connection)
+      client.connect
+      connection.queue << WhatsApp::Binary::Node.new("notification", {
+        "from" => "s.whatsapp.net", "id" => "N1", "type" => "server_sync",
+      })
+      client.pair(50.milliseconds)
+
+      ack = connection.sent.find { |node| node.tag == "ack" }.not_nil!
+      ack.attrs["class"].should eq("notification")
+      ack.attrs["id"].should eq("N1")
+      ack.attrs["to"].should eq("s.whatsapp.net")
+      ack.attrs["type"].should eq("server_sync")
+    end
+  end
+
+  it "decrypts the phone's peer messages and answers all three receipts" do
+    with_database do |path|
+      connection = StubConnection.new
+      client = WhatsApp::Native::Client.new(path, connection)
+      client.connect
+      device = client.device.not_nil!
+      primary = WhatsApp::Crypto::Curve25519KeyPair.generate
+      connection.queue << pair_success_node(device, primary, "15551234567:3@s.whatsapp.net", "99999:3@lid")
+      client.await_pair_success(5.seconds).paired?.should be_true
+      connection.queue << WhatsApp::Binary::Node.new("success", {"lid" => "99999:3@lid"})
+      connection.result_for("count")
+      connection.result_for("prekeys")
+      connection.result_for("passive")
+      client.login(5.seconds).success?.should be_true
+      connection.sent.clear
+
+      # The phone (own account, device 0) encrypts a protocol message to this
+      # companion using its prekey bundle, exactly like the initial sync does.
+      phone_store = WhatsApp::Crypto::Signal::Store::Memory.new
+      phone_identity = WhatsApp::Crypto::Curve25519KeyPair.generate
+      phone_address = WhatsApp::Crypto::Signal::Address.new("15551234567", 0)
+      our_address = WhatsApp::Crypto::Signal::Address.new("15551234567", 3)
+      prekey = device.one_time_prekeys.min_by(&.id)
+      builder = WhatsApp::Crypto::Signal::SessionBuilder.new(phone_store, phone_identity)
+      builder.process_pre_key_bundle(WhatsApp::Crypto::Signal::PreKeyBundle.new(
+        registration_id: device.registration_id,
+        device_id: 3_u32,
+        prekey_id: prekey.id,
+        prekey_public: prekey.public_key,
+        signed_prekey_id: device.signed_prekey.id,
+        signed_prekey_public: device.signed_prekey.public_key,
+        signed_prekey_signature: device.signed_prekey.signature.not_nil!,
+        identity_key: device.identity_key.public_key,
+      ), our_address)
+      phone_cipher = WhatsApp::Crypto::Signal::SessionCipher.new(phone_store, phone_identity)
+      history = WhatsApp::Proto::Writer.new.uint(1, 1_u64)
+      protocol = WhatsApp::Proto::Writer.new.message(6, history.bytes)
+      plaintext = WhatsApp::Proto::Writer.new.message(12, protocol.bytes).bytes
+      wire = phone_cipher.encrypt(our_address, plaintext).serialize
+
+      connection.queue << WhatsApp::Binary::Node.new("message", {
+        "category" => "peer", "from" => "15551234567:0@s.whatsapp.net",
+        "id" => "MSG1", "type" => "text",
+      }, wire, [WhatsApp::Binary::Node.new("enc", {"type" => "pkmsg", "v" => "2"}, wire)])
+      client.pair(50.milliseconds)
+
+      receipts = connection.sent.select { |node| node.tag == "receipt" }
+      sender = receipts.find { |node| node.attribute("type") == "sender" }.not_nil!
+      sender.attribute("id").should eq("MSG1")
+      sender.attribute("to").should eq("15551234567:0@s.whatsapp.net")
+      peer = receipts.find { |node| node.attribute("type") == "peer_msg" }.not_nil!
+      peer.attribute("to").should eq("15551234567@s.whatsapp.net")
+      hist = receipts.find { |node| node.attribute("type") == "hist_sync" }.not_nil!
+      hist.attribute("to").should eq("15551234567@s.whatsapp.net")
     end
   end
 end

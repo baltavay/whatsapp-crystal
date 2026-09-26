@@ -31,6 +31,7 @@ require "./media"
 require "./store/device_store"
 require "./store/prekeys"
 require "./crypto_bridge"
+require "./native/message_processor"
 
 module WhatsApp
   module Native
@@ -248,8 +249,10 @@ module WhatsApp
         # Server clock skew in seconds (t attr of pair-success/success); the
         # unified session id must be computed in server time.
         @server_time_offset = 0_i64
-        # Keepalive answering and reply matching belong to the transport layer.
-        @connection = FilteredConnection.new(connection)
+        # Keepalive answering and reply matching belong to the transport layer;
+        # inbound messages and notifications go through the message processor.
+        @message_processor = nil.as(MessageProcessor?)
+        @connection = FilteredConnection.new(connection, on_inbound: ->inbound(Binary::Node))
       end
 
       def initialize(
@@ -411,6 +414,9 @@ module WhatsApp
         # id (whatsmeow SendPresence does this); a companion that never sends
         # it is fingerprinted as unofficial and removed shortly after linking.
         send_unified_session
+        # Official clients end the login bootstrap by syncing every standard
+        # app-state collection, not just the ones announced in <ib>.
+        sync_remaining_app_state(dirty, collections)
         @logged_in = true
         ConnectResult.new(state, nil)
       rescue ex : Exception
@@ -442,17 +448,39 @@ module WhatsApp
       # ping the server while idle. A socket that is only read when a caller
       # waits for a reply goes silent for the server, is dropped after about
       # a minute, and the phone-side linking then never completes. The ping
-      # round trip also answers queued server pings and acks inbound
-      # messages (FilteredConnection). False means "reconnect".
+      # round trip also drains queued server pings and runs inbound messages
+      # through the processor (FilteredConnection). False means "reconnect".
+      # w:p is the query official clients use for keepalive.
       def ping : Bool
         return false unless @connected && @logged_in
-        request = Binary::Node.new("iq", attrs(type: "get", xmlns: "urn:xmpp:ping", to: "s.whatsapp.net", id: message_id), nil, [
-          Binary::Node.new("ping"),
-        ])
+        request = Binary::Node.new("iq", attrs(type: "get", xmlns: "w:p", to: "s.whatsapp.net", id: message_id))
         response = @connection.request(request)
         !response.nil? && response.tag == "iq" && response.attribute("type") == "result"
       rescue ex : Exception
         false
+      end
+
+      private def inbound(node : Binary::Node) : Nil
+        message_processor!.handle(node)
+      end
+
+      # The inbound processor owns the receiving Signal stack. The device's
+      # prekeys live in the device store; seed them into the Signal store so
+      # the first inbound prekey message can complete its X3DH handshake.
+      private def message_processor! : MessageProcessor
+        @message_processor ||= begin
+          state = @device || @store.load_or_create
+          signal_store = signal_store()
+          unless signal_store.local_identity
+            signal_store.save_local_identity(state.identity_key)
+            signal_store.local_registration_id = state.registration_id
+            signal_store.save_signed_prekey(state.signed_prekey.id, state.signed_prekey.key_pair, state.signed_prekey.signature.not_nil!)
+            state.one_time_prekeys.each do |prekey|
+              signal_store.save_one_time_prekey(prekey.id, prekey.key_pair)
+            end
+          end
+          MessageProcessor.new(state, SignalPairwiseCrypto.new(signal_store, state), @connection)
+        end
       end
 
       def send_text(group_jid : String, text : String) : SendResult
@@ -734,6 +762,16 @@ module WhatsApp
           response = @connection.request(request)
           STDERR.puts "app state #{name}: #{response ? describe(response)[0, 240] : "none"}" if ENV["WHATSAPP_DEBUG"]?
         end
+      end
+
+      # The collections official clients sync on a fresh login (whatsmeow
+      # appstate.go): anything the server did not already announce in the
+      # bootstrap is fetched with return_snapshot so the companion catches up.
+      APP_STATE_COLLECTIONS = ["critical_block", "critical_unblock_low", "regular_high", "regular", "regular_low"]
+
+      private def sync_remaining_app_state(dirty : Array(Tuple(String, String)), collections : Array(Tuple(String, String))) : Nil
+        pending = APP_STATE_COLLECTIONS - collections.map(&.[0])
+        sync_app_state(pending.map { |name| {name, "0"} }) unless pending.empty?
       end
 
       # <pair-success>/<success> carry the server clock in the t attribute;

@@ -31,6 +31,13 @@ module WhatsApp
       {message.type == :prekey ? "pkmsg" : "msg", message.serialize}
     end
 
+    # Decrypts an inbound pairwise message from the given sender. On first
+    # contact the prekey message completes the peer's X3DH handshake against
+    # the prekeys this device uploaded.
+    def decrypt(device_jid : String, wire : Bytes) : Bytes
+      @cipher.decrypt(address(device_jid), Crypto::Signal::CiphertextMessage.parse(wire))
+    end
+
     private def to_signal_bundle(bundle : PreKeyBundle) : Crypto::Signal::PreKeyBundle
       Crypto::Signal::PreKeyBundle.new(
         registration_id: bundle.registration_id,

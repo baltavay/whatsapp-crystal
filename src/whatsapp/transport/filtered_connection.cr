@@ -12,7 +12,8 @@ module WhatsApp
       REPLY_TAGS      = {"ack", "receipt", "xmlstreamend"}
 
       # WHATSAPP_REQUEST_TIMEOUT shortens the wait when debugging live.
-      def initialize(@inner : Connection, timeout : Time::Span? = nil)
+      def initialize(@inner : Connection, timeout : Time::Span? = nil,
+                     @on_inbound : (Binary::Node -> Nil)? = nil)
         @timeout = timeout || (ENV["WHATSAPP_REQUEST_TIMEOUT"]?.try(&.to_i.seconds) || REQUEST_TIMEOUT)
       end
 
@@ -36,6 +37,9 @@ module WhatsApp
           return nil unless node
           next if answer_keepalive(node)
           acknowledge(node)
+          if @on_inbound && {"message", "notification"}.includes?(node.tag)
+            @on_inbound.not_nil!.call(node)
+          end
           return node
         end
       end
