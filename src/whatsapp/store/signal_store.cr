@@ -153,25 +153,25 @@ module WhatsApp
           end
 
           def one_time_prekey(id : UInt32) : WhatsApp::Crypto::Curve25519KeyPair?
-            raw = @db.query_one?("SELECT private_key, public_key FROM whatsapp_signal_one_time_prekeys WHERE id = ?", id, as: {Bytes, Bytes})
+            raw = @db.query_one?("SELECT private_key, public_key FROM whatsapp_signal_one_time_prekeys WHERE id = ?", id.to_i64, as: {Bytes, Bytes})
             raw.try { |keys| WhatsApp::Crypto::Curve25519KeyPair.new(keys[0].dup, keys[1].dup) }
           end
 
           def save_one_time_prekey(id : UInt32, key_pair : WhatsApp::Crypto::Curve25519KeyPair) : Nil
-            @db.exec("INSERT INTO whatsapp_signal_one_time_prekeys(id, private_key, public_key) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET private_key = excluded.private_key, public_key = excluded.public_key", id, key_pair.private_key, key_pair.public_key)
+            @db.exec("INSERT INTO whatsapp_signal_one_time_prekeys(id, private_key, public_key) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET private_key = excluded.private_key, public_key = excluded.public_key", id.to_i64, key_pair.private_key, key_pair.public_key)
           end
 
           def remove_one_time_prekey(id : UInt32) : Nil
-            @db.exec("DELETE FROM whatsapp_signal_one_time_prekeys WHERE id = ?", id)
+            @db.exec("DELETE FROM whatsapp_signal_one_time_prekeys WHERE id = ?", id.to_i64)
           end
 
           def signed_prekey(id : UInt32) : SignedPreKey?
-            raw = @db.query_one?("SELECT private_key, public_key, signature FROM whatsapp_signal_signed_prekeys WHERE id = ?", id, as: {Bytes, Bytes, Bytes})
+            raw = @db.query_one?("SELECT private_key, public_key, signature FROM whatsapp_signal_signed_prekeys WHERE id = ?", id.to_i64, as: {Bytes, Bytes, Bytes})
             raw.try { |keys| SignedPreKey.new(WhatsApp::Crypto::Curve25519KeyPair.new(keys[0].dup, keys[1].dup), keys[2].dup) }
           end
 
           def save_signed_prekey(id : UInt32, key_pair : WhatsApp::Crypto::Curve25519KeyPair, signature : Bytes) : Nil
-            @db.exec("INSERT INTO whatsapp_signal_signed_prekeys(id, private_key, public_key, signature) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET private_key = excluded.private_key, public_key = excluded.public_key, signature = excluded.signature", id, key_pair.private_key, key_pair.public_key, signature)
+            @db.exec("INSERT INTO whatsapp_signal_signed_prekeys(id, private_key, public_key, signature) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET private_key = excluded.private_key, public_key = excluded.public_key, signature = excluded.signature", id.to_i64, key_pair.private_key, key_pair.public_key, signature)
           end
 
           def local_registration_id : UInt32
@@ -180,15 +180,15 @@ module WhatsApp
 
           def local_registration_id=(value : UInt32) : UInt32
             if identity = local_identity
-              @db.exec("INSERT INTO whatsapp_signal_local_identity(id, private_key, public_key, registration_id) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET registration_id = excluded.registration_id", identity.private_key, identity.public_key, value)
+              @db.exec("INSERT INTO whatsapp_signal_local_identity(id, private_key, public_key, registration_id) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET registration_id = excluded.registration_id", identity.private_key, identity.public_key, value.to_i64)
             else
-              @db.exec("INSERT INTO whatsapp_signal_local_identity(id, private_key, public_key, registration_id) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET registration_id = excluded.registration_id", Bytes.new(32), Bytes.new(32), value)
+              @db.exec("INSERT INTO whatsapp_signal_local_identity(id, private_key, public_key, registration_id) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET registration_id = excluded.registration_id", Bytes.new(32), Bytes.new(32), value.to_i64)
             end
             value
           end
 
           def save_local_identity(key_pair : WhatsApp::Crypto::Curve25519KeyPair) : Nil
-            @db.exec("INSERT INTO whatsapp_signal_local_identity(id, private_key, public_key, registration_id) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET private_key = excluded.private_key, public_key = excluded.public_key", key_pair.private_key, key_pair.public_key, local_registration_id)
+            @db.exec("INSERT INTO whatsapp_signal_local_identity(id, private_key, public_key, registration_id) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET private_key = excluded.private_key, public_key = excluded.public_key", key_pair.private_key, key_pair.public_key, local_registration_id.to_i64)
           end
 
           def local_identity : WhatsApp::Crypto::Curve25519KeyPair?

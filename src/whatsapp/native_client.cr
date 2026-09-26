@@ -460,24 +460,24 @@ module WhatsApp
         false
       end
 
+      # Inbound processing must never break a request in flight (whatsmeow
+      # processes its queue in the background): a store or crypto failure only
+      # costs a receipt, which the phone retries.
       private def inbound(node : Binary::Node) : Nil
         message_processor!.handle(node)
+      rescue ex : Exception
+        STDERR.puts "inbound processing failed: #{ex.class}: #{ex.message}" if ENV["WHATSAPP_DEBUG"]?
       end
 
-      # The inbound processor owns the receiving Signal stack. The device's
-      # prekeys live in the device store; seed them into the Signal store so
-      # the first inbound prekey message can complete its X3DH handshake.
       private def message_processor! : MessageProcessor
         @message_processor ||= begin
           state = @device || @store.load_or_create
           signal_store = signal_store()
-          unless signal_store.local_identity
-            signal_store.save_local_identity(state.identity_key)
-            signal_store.local_registration_id = state.registration_id
-            signal_store.save_signed_prekey(state.signed_prekey.id, state.signed_prekey.key_pair, state.signed_prekey.signature.not_nil!)
-            state.one_time_prekeys.each do |prekey|
-              signal_store.save_one_time_prekey(prekey.id, prekey.key_pair)
-            end
+          signal_store.save_local_identity(state.identity_key)
+          signal_store.local_registration_id = state.registration_id
+          signal_store.save_signed_prekey(state.signed_prekey.id, state.signed_prekey.key_pair, state.signed_prekey.signature.not_nil!)
+          state.one_time_prekeys.each do |prekey|
+            signal_store.save_one_time_prekey(prekey.id, prekey.key_pair)
           end
           MessageProcessor.new(state, SignalPairwiseCrypto.new(signal_store, state), @connection)
         end

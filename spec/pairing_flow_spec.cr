@@ -299,6 +299,34 @@ describe WhatsApp::Native::Client do
     end
   end
 
+  it "does not let inbound processor setup failures abort login" do
+    with_database do |path|
+      database = DB.open("sqlite3://#{path}?foreign_keys=on")
+      database.exec("CREATE TABLE whatsapp_signal_local_identity (id INTEGER PRIMARY KEY NOT NULL)")
+      database.close
+
+      connection = StubConnection.new
+      client = WhatsApp::Native::Client.new(path, connection)
+      client.connect
+      device = client.device.not_nil!
+      primary = WhatsApp::Crypto::Curve25519KeyPair.generate
+      connection.queue << pair_success_node(device, primary, "15551234567:3@s.whatsapp.net", "99999:3@lid")
+      client.await_pair_success(5.seconds).paired?.should be_true
+
+      connection.queue << WhatsApp::Binary::Node.new("message", {
+        "from" => "120363433640733657@g.us",
+        "id"   => "AC031F2A08C9517DA4F87B6781928A13",
+      })
+      connection.queue << WhatsApp::Binary::Node.new("success", {"lid" => "99999:3@lid"})
+      connection.result_for("count")
+      connection.result_for("prekeys")
+      connection.result_for("passive")
+
+      client.login(5.seconds).success?.should be_true
+      client.logged_in?.should be_true
+    end
+  end
+
   it "unlinks the companion through remove-companion-device" do
     with_database do |path|
       connection = StubConnection.new
