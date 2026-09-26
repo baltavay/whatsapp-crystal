@@ -473,11 +473,13 @@ module WhatsApp
         @message_processor ||= begin
           state = @device || @store.load_or_create
           signal_store = signal_store()
-          signal_store.save_local_identity(state.identity_key)
-          signal_store.local_registration_id = state.registration_id
-          signal_store.save_signed_prekey(state.signed_prekey.id, state.signed_prekey.key_pair, state.signed_prekey.signature.not_nil!)
-          state.one_time_prekeys.each do |prekey|
-            signal_store.save_one_time_prekey(prekey.id, prekey.key_pair)
+          unless signal_store.local_identity
+            signal_store.save_local_identity(state.identity_key)
+            signal_store.local_registration_id = state.registration_id
+            signal_store.save_signed_prekey(state.signed_prekey.id, state.signed_prekey.key_pair, state.signed_prekey.signature.not_nil!)
+            state.one_time_prekeys.each do |prekey|
+              signal_store.save_one_time_prekey(prekey.id, prekey.key_pair)
+            end
           end
           MessageProcessor.new(state, SignalPairwiseCrypto.new(signal_store, state), @connection)
         end
