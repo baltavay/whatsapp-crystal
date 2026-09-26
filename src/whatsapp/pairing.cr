@@ -25,7 +25,7 @@ module WhatsApp
     getter created_at : Time
     getter phase : PairingPhase
 
-    def initialize(device : DeviceState, reference : Bytes, @client_type : String = "Chrome", @created_at : Time = Time.utc)
+    def initialize(device : DeviceState, reference : Bytes, @client_type : String = "9", @created_at : Time = Time.utc)
       raise ArgumentError.new("pairing reference must not be empty") if reference.empty?
       raise ArgumentError.new("pairing client type must not be empty") if @client_type.empty? || @client_type.includes?(',')
       @reference = reference.dup
@@ -264,11 +264,11 @@ module WhatsApp
       nil
     end
 
-    def pairing_state(reference : Bytes, client_type : String = "Chrome") : PairingState
+    def pairing_state(reference : Bytes, client_type : String = "9") : PairingState
       PairingState.new(self, reference, client_type)
     end
 
-    def qr_data(reference : Bytes, client_type : String = "Chrome") : String
+    def qr_data(reference : Bytes, client_type : String = "9") : String
       pairing_state(reference, client_type).qr
     end
   end

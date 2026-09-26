@@ -214,7 +214,14 @@ module WhatsApp
       DEVICE_SIGNATURE_PREFIX  = Bytes[0x06_u8, 0x01_u8]
       HOSTED_ACCOUNT_PREFIX    = Bytes[0x06_u8, 0x05_u8]
       HOSTED_ACCOUNT_TYPE      = 1_u32
+
       CONNECT_TIMEOUT          = 2.minutes
+
+      # Compliant QR client-type suffix (whatsmeow pair.go getQRClientType,
+      # issue #1110): a single-character platform code, not a name. We present
+      # as a generic web browser — DeviceProps platform UNKNOWN with the
+      # WEB_BROWSER subplatform maps to PairClientOtherWebClient ("9").
+      QR_CLIENT_TYPE = "9"
 
       getter store : Store::DeviceStore
       getter connection : Connection
@@ -238,6 +245,9 @@ module WhatsApp
         @sender = nil.as(Sender?)
         @signal_store = nil.as(Crypto::Signal::Store::SQLite?)
         @seen = [] of String
+        # Server clock skew in seconds (t attr of pair-success/success); the
+        # unified session id must be computed in server time.
+        @server_time_offset = 0_i64
         # Keepalive answering and reply matching belong to the transport layer.
         @connection = FilteredConnection.new(connection)
       end
@@ -323,7 +333,7 @@ module WhatsApp
             next unless node.tag == "iq" && (node.child("pair-success") || node.tag == "pair-success")
             return pair_failure("#{ex.message} (node: #{describe(node)})", state)
           end
-
+          remember_server_time(node)
           key_index = begin
             complete_pairing(state, success)
           rescue ex : WhatsApp::Error | ArgumentError
@@ -333,6 +343,10 @@ module WhatsApp
             Binary::Node.new("device-identity", {"key-index" => key_index.to_s}, confirmation_identity(state)),
           ])
           acknowledge(node, [confirmation])
+          # Official web clients report a unified-session id right after the
+          # pairing confirmation (whatsmeow handlePairSuccess does the same,
+          # racing the disconnect that follows pair-device-sign).
+          send_unified_session
           return PairResult.new(nil, state, nil)
         end
       rescue ex : Exception
@@ -370,6 +384,7 @@ module WhatsApp
         loop do
           node = next_node(timeout) || return ConnectResult.new(nil, error(:login, "timed out waiting for login success#{recent_nodes}"))
           if node.tag == "success"
+            remember_server_time(node)
             apply_success(state, node)
             break
           elsif node.tag == "ib" || node.tag == "notification"
@@ -392,6 +407,10 @@ module WhatsApp
         # Real clients announce presence right after login: it publishes the
         # pushname and takes the companion out of WhatsApp's "logging in" state.
         send_presence(state)
+        # Presence-available is when official clients report the unified-session
+        # id (whatsmeow SendPresence does this); a companion that never sends
+        # it is fingerprinted as unofficial and removed shortly after linking.
+        send_unified_session
         @logged_in = true
         ConnectResult.new(state, nil)
       rescue ex : Exception
@@ -717,6 +736,28 @@ module WhatsApp
         end
       end
 
+      # <pair-success>/<success> carry the server clock in the t attribute;
+      # the unified session id must be computed in server time.
+      private def remember_server_time(node : Binary::Node) : Nil
+        timestamp = node.attribute("t").try(&.to_i64?)
+        @server_time_offset = timestamp - Time.utc.to_unix if timestamp
+      end
+
+      # Unified-session telemetry (whatsmeow client.go sendUnifiedSession, PR
+      # #1057): id = ((server_now + 3 days) mod 7 days) in milliseconds. Sent
+      # after pairing and with presence-available; never fatal.
+      private def send_unified_session : Nil
+        window_ms = 7 * 24 * 3600 * 1000_i64
+        offset_ms = 3 * 24 * 3600 * 1000_i64
+        server_now_ms = Time.utc.to_unix_ms + @server_time_offset * 1000
+        id = ((server_now_ms + offset_ms) % window_ms).to_s
+        @connection.send(Binary::Node.new("ib", Binary::Attrs.new, nil, [
+          Binary::Node.new("unified_session", {"id" => id}),
+        ]))
+      rescue ex : Exception
+        STDERR.puts "unified_session send failed: #{ex.class}: #{ex.message}" if ENV["WHATSAPP_DEBUG"]?
+      end
+
       private def mark_clean(dirty : Array(Tuple(String, String))) : Nil
         dirty.uniq.each do |(type, timestamp)|
           request = Binary::Node.new("iq", attrs(type: "set", xmlns: "urn:xmpp:whatsapp:dirty", to: "s.whatsapp.net", id: message_id), nil, [
@@ -819,7 +860,7 @@ module WhatsApp
       end
 
       private def client_type : String
-        @device.try(&.platform) || "Chrome"
+        QR_CLIENT_TYPE
       end
 
       private def pair_failure(message : String, device : DeviceState? = nil) : PairResult

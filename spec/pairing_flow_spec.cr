@@ -115,7 +115,10 @@ describe WhatsApp::Native::Client do
       qr = result.qr.not_nil!
       qr.should start_with("https://wa.me/settings/linked_devices#2@abcDEF,")
       device = client.device.not_nil!
-      qr.should contain(Base64.strict_encode(device.noise_key.public_key))
+      qr.should contain(Base64.strict_encode(device.identity_key.public_key))
+      # Compliant client-type suffix: a single-character code, not a name
+      # (whatsmeow issue #1110).
+      qr.should end_with(",9")
 
       ack = connection.last_sent("iq").not_nil!
       ack.attrs["type"].should eq("result")
@@ -341,11 +344,21 @@ describe WhatsApp::Native::Client do
         primary = WhatsApp::Crypto::Curve25519KeyPair.generate
         connection.queue << pair_success_node(device, primary, "15551234567:3@s.whatsapp.net", "99999:3@lid")
         client.await_pair_success(5.seconds).paired?.should be_true
+        # The unified-session id is reported on the pairing socket right after
+        # the pair-device-sign confirmation.
+        pairing_ib = connection.sent.find { |node| node.tag == "ib" && node.child("unified_session") }.not_nil!
+        pairing_id = pairing_ib.child("unified_session").not_nil!.attribute("id").to_s
+        pairing_id.should match(/^\d+$/)
+        pairing_id.to_i64.should be < 604_800_000
         connection.queue << WhatsApp::Binary::Node.new("success", {"lid" => "99999:3@lid"})
         connection.result_for("count")
         connection.result_for("prekeys")
         connection.result_for("passive")
         client.login(5.seconds).success?.should be_true
+        # Presence-available after login reports the unified-session id again
+        # on the logged-in connection.
+        login_ibs = connection.sent.count { |node| node.tag == "ib" && node.child("unified_session") }
+        login_ibs.should eq 2
         connection.sent.clear
 
         # A socket that never answers is a dead socket, not a hang.
