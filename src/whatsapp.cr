@@ -45,6 +45,10 @@ module WhatsApp
     getter media_host : String?
     getter media_auth : String?
     getter device_name : String
+    # Name the account is shown under in chats (the pushname). Distinct from
+    # device_name: device_name labels the linked device, push_name is the account
+    # name other participants see.
+    getter push_name : String
 
     def initialize(
       @group_jid : String? = ENV["WHATSAPP_GROUP_JID"]?,
@@ -53,6 +57,7 @@ module WhatsApp
       @media_host : String? = ENV["WHATSAPP_MEDIA_HOST"]?,
       @media_auth : String? = ENV["WHATSAPP_MEDIA_AUTH"]?,
       @device_name : String = ENV.fetch("WHATSAPP_DEVICE_NAME", Proto::Registration::DEFAULT_DEVICE_NAME),
+      @push_name : String = ENV.fetch("WHATSAPP_PUSH_NAME", DeviceState::DEFAULT_PUSH_NAME),
     )
     end
   end
@@ -64,7 +69,7 @@ module WhatsApp
                 auth = @config.media_auth || raise Error.new("WHATSAPP_MEDIA_AUTH is required with WHATSAPP_MEDIA_HOST")
                 Native::MediaUploaderTransport.new(MediaConnection.new(host, auth))
               end
-      @native = Native::Client.new(@config.session_db, connection, media, nil, nil, @config.device_name)
+      @native = Native::Client.new(@config.session_db, connection, media, nil, nil, @config.device_name, @config.push_name)
     end
 
     # Sends text to the configured (or given) group and returns the message id.

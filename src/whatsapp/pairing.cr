@@ -91,8 +91,10 @@ module WhatsApp
     getter account : Proto::ADV::SignedDeviceIdentity?
     getter prekey_uploaded_id : UInt32
     # Sent as <presence name=.../> after login; without it the server has no
-    # pushname for this companion (whatsmeow store.Device.PushName).
-    getter push_name : String
+    # pushname for this companion (whatsmeow store.Device.PushName). Property,
+    # not getter: the configured name (Config#push_name) must be able to win over
+    # what an already-paired session stored earlier.
+    property push_name : String
 
     def initialize(
       @noise_key,

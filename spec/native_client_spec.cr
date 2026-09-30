@@ -351,4 +351,31 @@ describe WhatsApp::Sender do
       client.send_text(SPEC_GROUP, "too early").error.not_nil!.kind.should eq(:not_connected)
     end
   end
+
+  it "sends the configured push name and refreshes the stored one" do
+    with_database do |path|
+      store = WhatsApp::Store::DeviceStore.new(path)
+      state = store.load_or_create
+      state.push_name.should eq(WhatsApp::DeviceState::DEFAULT_PUSH_NAME)
+
+      connection = StubConnection.new
+      client = WhatsApp::Native::Client.new(store, connection, nil, nil, nil, "example-client", "Example Account")
+      client.send_presence(state)
+
+      connection.find("presence").not_nil!.attrs["name"].should eq("Example Account")
+      # The stored value follows the sent one: a session paired before the
+      # setting existed would otherwise keep answering with DEFAULT_PUSH_NAME.
+      store.load_or_create.push_name.should eq("Example Account")
+    end
+  end
+
+  it "keeps the account's stored name when no push name is configured" do
+    with_database do |path|
+      store = WhatsApp::Store::DeviceStore.new(path)
+      state = store.load_or_create
+      connection = StubConnection.new
+      WhatsApp::Native::Client.new(store, connection).send_presence(state)
+      connection.find("presence").not_nil!.attrs["name"].should eq(WhatsApp::DeviceState::DEFAULT_PUSH_NAME)
+    end
+  end
 end

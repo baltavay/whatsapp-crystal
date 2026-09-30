@@ -8,7 +8,7 @@ action = ARGV.shift?
 if action.nil? || {"help", "--help", "-h"}.includes?(action)
   puts <<-USAGE
   Usage:
-    whatsapp-crystal pair [--name NAME] [--db PATH] [--ws-url URL]
+    whatsapp-crystal pair [--name NAME] [--push-name NAME] [--db PATH] [--ws-url URL]
     whatsapp-crystal groups [--db PATH] [--ws-url URL]
     whatsapp-crystal logout [--db PATH] [--ws-url URL]
     whatsapp-crystal send TEXT [--group JID] [--db PATH] [--ws-url URL]
@@ -22,6 +22,7 @@ if action.nil? || {"help", "--help", "-h"}.includes?(action)
     WHATSAPP_MEDIA_HOST    optional media host override (auto-discovered when unset)
     WHATSAPP_MEDIA_AUTH    optional media token override (required with WHATSAPP_MEDIA_HOST)
     WHATSAPP_DEVICE_NAME   linked-device label (default: whatsapp-crystal, pairing only)
+    WHATSAPP_PUSH_NAME     account name shown in chats (default: Crystal)
   USAGE
   exit(action.nil? ? 1 : 0)
 end
@@ -32,6 +33,7 @@ ws_url = config.websocket_url
 media_host = config.media_host
 media_auth = config.media_auth
 device_name = config.device_name
+push_name = config.push_name
 qr_path = nil.as(String?)
 
 parser = OptionParser.new do |opts|
@@ -41,12 +43,13 @@ parser = OptionParser.new do |opts|
   opts.on("--media-host HOST", "WhatsApp media host") { |value| media_host = value }
   opts.on("--media-auth TOKEN", "WhatsApp media token") { |value| media_auth = value }
   opts.on("--name NAME", "linked-device label, used when pairing (default: #{WhatsApp::Proto::Registration::DEFAULT_DEVICE_NAME})") { |value| device_name = value }
+  opts.on("--push-name NAME", "account name shown in chats (default: #{WhatsApp::DeviceState::DEFAULT_PUSH_NAME})") { |value| push_name = value }
   opts.on("--help", "show this help") { puts opts; exit }
 end
 
 begin
   parser.parse(ARGV)
-  client = WhatsApp::Client.new(WhatsApp::Config.new(group, db, ws_url, media_host, media_auth, device_name))
+  client = WhatsApp::Client.new(WhatsApp::Config.new(group, db, ws_url, media_host, media_auth, device_name, push_name))
   case action
   when "pair"
     puts "Scan this from WhatsApp -> Linked devices; waiting for the scan..."

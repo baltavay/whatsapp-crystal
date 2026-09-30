@@ -216,7 +216,7 @@ module WhatsApp
       HOSTED_ACCOUNT_PREFIX    = Bytes[0x06_u8, 0x05_u8]
       HOSTED_ACCOUNT_TYPE      = 1_u32
 
-      CONNECT_TIMEOUT          = 2.minutes
+      CONNECT_TIMEOUT = 2.minutes
 
       # Compliant QR client-type suffix (whatsmeow pair.go getQRClientType,
       # issue #1110): a single-character platform code, not a name. We present
@@ -238,6 +238,7 @@ module WhatsApp
         @group_crypto : GroupCrypto? = nil,
         @pairwise : PairwiseCrypto? = nil,
         @device_name : String = Proto::Registration::DEFAULT_DEVICE_NAME,
+        @push_name : String = DeviceState::DEFAULT_PUSH_NAME,
       )
         @device = nil.as(DeviceState?)
         @connected = false
@@ -262,8 +263,9 @@ module WhatsApp
         group_crypto : GroupCrypto? = nil,
         pairwise : PairwiseCrypto? = nil,
         device_name : String = Proto::Registration::DEFAULT_DEVICE_NAME,
+        push_name : String = DeviceState::DEFAULT_PUSH_NAME,
       )
-        initialize(Store::DeviceStore.new(path), connection, media, group_crypto, pairwise, device_name)
+        initialize(Store::DeviceStore.new(path), connection, media, group_crypto, pairwise, device_name, push_name)
       end
 
       def connected? : Bool
@@ -808,8 +810,16 @@ module WhatsApp
         end
       end
 
+      # The account name in chats comes from the configuration, not from the
+      # stored state: sessions paired before the setting existed carry
+      # DEFAULT_PUSH_NAME in their state, and it used to be published to the
+      # account. The stored copy is refreshed here so the two never diverge.
       def send_presence(state : DeviceState) : Nil
-        @connection.send(Binary::Node.new("presence", {"type" => "available", "name" => state.push_name}))
+        if state.push_name != @push_name
+          state.push_name = @push_name
+          state.save(@store.session)
+        end
+        @connection.send(Binary::Node.new("presence", {"type" => "available", "name" => @push_name}))
       end
 
       private def set_passive(passive : Bool) : Nil
