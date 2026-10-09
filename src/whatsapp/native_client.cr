@@ -243,6 +243,7 @@ module WhatsApp
         @device = nil.as(DeviceState?)
         @connected = false
         @logged_in = false
+        @closed = false
         @qr = nil.as(String?)
         @sender = nil.as(Sender?)
         @signal_store = nil.as(Crypto::Signal::Store::SQLite?)
@@ -538,10 +539,21 @@ module WhatsApp
         @connection.send(node)
       end
 
+      # Closes the connection *and* the session database this client owns: callers
+      # (e.g. the application on reconnect) discard the whole client and have no
+      # handle on the store, so anything not released here leaks. Without this,
+      # each disconnect leaked a descriptor plus SQLite's page cache for the
+      # session file, about 2 MB per reconnect. Idempotent: the stores are
+      # released at most once.
       def close : Nil
+        return if @closed
+        @closed = true
         @connection.close if @connected
         @connected = false
         @logged_in = false
+        @signal_store.try(&.close)
+        @signal_store = nil
+        @store.close
       end
 
       private def send_media(group_jid : String, path : String, kind : Symbol, caption : String, mime_type : String?) : SendResult
